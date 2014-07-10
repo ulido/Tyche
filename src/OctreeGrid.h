@@ -65,7 +65,7 @@ public:
       return false;
     if ((low.array() > ohigh.array()).any())
       return false;
-    int cond_sum = (high.array() == olow.array()).cast<int>().sum() + (low.array() == ohigh.array()).cast<int>().sum();
+    int cond_sum = ((high.array() - olow.array()).cwiseAbs() < 1e-8).cast<int>().sum() + ((low.array() - ohigh.array()).cwiseAbs() < 1e-8).cast<int>().sum();
     if (cond_sum >= 2)
       return false;
     return true;
