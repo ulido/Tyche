@@ -160,8 +160,10 @@ void BindingReaction::integrate(const double dt) {
 		  //boost::uniform_int<> uni_int(0, nr_bind_candidates-1);
 		  //boost::variate_generator<base_generator_type&, boost::uniform_int<> > rint(generator, uni_int);
 		  std::vector<int>::iterator bind_it = bind_candidates.begin()+floor(r*nr_bind_candidates/prob);
-		  mols->mark_for_deletion(*bind_it);
-		  bind_candidates.erase(bind_it);
+		  if (remove_molecule) {
+		    mols->mark_for_deletion(*bind_it);
+		    bind_candidates.erase(bind_it);
+		  }
 		  
 		  site_state++;
 		  
@@ -188,7 +190,8 @@ void BindingReaction::integrate(const double dt) {
 	    double phi = 2*PI*uni();
 	    double thet = PI/2.*uni();
 	    Vect3d npos = Vect3d(unbinding_radius*sin(thet)*cos(phi), unbinding_radius*sin(thet)*sin(phi), unbinding_radius*cos(thet)) + position;
-	    mols->add_molecule(npos, npos);
+	    if (remove_molecule)
+	      mols->add_molecule(npos, npos);
 	  }
 	}
 }
@@ -917,7 +920,8 @@ BindingReaction::BindingReaction(const double rate,
 				 const double dt,
 				 Vect3d pos,
 				 const int binding_sites,
-				 const int initial_state):
+				 const int initial_state,
+				 const bool remove_molecule):
 		Reaction(rate),
 		P_diss(1.-exp(-diss_rate*dt)),
 		binding_radius_dt(dt),
@@ -926,7 +930,8 @@ BindingReaction::BindingReaction(const double rate,
 		unbinding_radius(unbinding),
 		binding_sites(binding_sites),
 		site_state(initial_state),
-		have_state_changed_cb(false) {
+		have_state_changed_cb(false),
+		remove_molecule(remove_molecule) {
 	this->add_species(species);
 
 	P_lambda = calculate_lambda(dt);

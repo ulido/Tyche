@@ -113,7 +113,8 @@ public:
 				const double dt,
 				Vect3d pos,
 				const int binding_sites,
-				const int initial_state);
+				const int initial_state,
+				const bool remove_molecule);
 
 	static std::auto_ptr<Operator> New(const double rate,
 					   const double diss_rate,
@@ -123,8 +124,9 @@ public:
 					   const double dt,
 					   Vect3d pos,
 					   const int binding_sites,
-					   const int initial_state) {
-	  return std::auto_ptr<Operator>(new BindingReaction(rate,diss_rate,species,binding,unbinding,dt,pos,binding_sites,initial_state));
+					   const int initial_state,
+					   const bool remove_molecule=true) {
+	  return std::auto_ptr<Operator>(new BindingReaction(rate,diss_rate,species,binding,unbinding,dt,pos,binding_sites,initial_state,remove_molecule));
 	}
 
 	double get_rate() const {return this->rate;}
@@ -166,6 +168,7 @@ protected:
 	double binding_radius,unbinding_radius;
 	double P_lambda;
 	double P_diss;
+        bool remove_molecule;
 	int binding_sites;
 	int site_state;
 	bool have_state_changed_cb;
