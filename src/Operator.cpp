@@ -54,7 +54,7 @@ void Operator::resume_timer() {
 }
 
 void Operator::operator ()(const double dt) {
-	Operator::resume_timer();
+  //Operator::resume_timer();
 	LOG(2, "Starting Operator: " << *this);
 
 	if (active)
@@ -62,7 +62,7 @@ void Operator::operator ()(const double dt) {
 
 	time += dt;
 	LOG(2, "Stopping Operator: " << *this);
-	Operator::stop_timer();
+	// Operator::stop_timer();
 }
 
 double Operator::integrate_for_time(const double itime, const double dt) {
@@ -79,7 +79,7 @@ void Operator::reset() {
 }
 
 void Operator::stop_timer() {
-	timer.stop();
+  //timer.stop();
 	//global_timer.stop();
 	const double time = (timer.elapsed().user + timer.elapsed().user)/double(1000000000);
 	total_time += time;
