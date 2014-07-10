@@ -28,9 +28,11 @@
 #include <numpy/ndarrayobject.h>
 #include "Tyche.h"
 #include <numpy/arrayobject.h>
+#include <boost/python/tuple.hpp>
 
 #include <vtkUnstructuredGrid.h>
 #include <vtkSmartPointer.h>
+
 
 #include "StructuredGrid.h"
 #include "OctreeGrid.h"
@@ -184,7 +186,7 @@ std::auto_ptr<Operator> new_bi_reaction2(const double rate, const ReactionEquati
 BOOST_PYTHON_FUNCTION_OVERLOADS(new_bi_reaction_overloads2, new_bi_reaction2, 6, 7);
 
 
-boost::python::object Species_get_compartments(Species& self) {
+boost::python::numeric::array Species_get_compartments(Species& self) {
   if (self.grid!=NULL) {
     Vect3i grid_size = self.grid->get_cells_along_axes();
     npy_intp size[3] = {grid_size[0],grid_size[1],grid_size[2]};
@@ -211,12 +213,35 @@ boost::python::object Species_get_compartments(Species& self) {
 	}
       }
     }
-      
+
     boost::python::handle<> handle(out);
     boost::python::numeric::array arr(handle);
     return arr;
   }
-  return boost::python::object();
+  return boost::python::numeric::array(0);
+}
+
+void Species_set_compartments(Species& self,boost::python::numeric::array array) {
+	PyObject *in = array.ptr();
+	if (self.grid!=NULL) {
+		Vect3i grid_size = self.grid->get_cells_along_axes();
+		npy_intp size[3] = {grid_size[0],grid_size[1],grid_size[2]};
+
+		CHECK(PyArray_NDIM(in)==3,"Python array dimensions does not match compartments");
+		CHECK((PyArray_DIMS(in)[0]==size[0])&&(PyArray_DIMS(in)[1]==size[1])&&(PyArray_DIMS(in)[2]==size[2]),"shape of Python array dimensions does not match compartments");
+		const StructuredGrid *sgrid = dynamic_cast<const StructuredGrid*>(self.grid);
+		if (sgrid!=NULL) {
+			for (int i = 0; i < grid_size[0]; ++i) {
+				for (int j = 0; j < grid_size[1]; ++j) {
+					for (int k = 0; k < grid_size[2]; ++k) {
+						self.copy_numbers[sgrid->vect_to_index(i,j,k)] = *((int *)PyArray_GETPTR3(in,i,j,k));
+					}
+				}
+			}
+		} else {
+			ERROR("set_compartments not implemented for oct-tree grids");
+		}
+	}
 }
 
 boost::python::tuple Species_get_particles(Species& self) {
@@ -362,16 +387,73 @@ struct vtkSmartPointer_to_python {
 	}
 };
 
+//
+// This python to C++ converter uses the fact that VTK Python objects have an
+// attribute called __this__, which is a string containing the memory address
+// of the VTK C++ object and its class name.
+// E.g. for a vtkPoints object __this__ might be "_0000000105a64420_p_vtkPoints"
+//
+void* extract_vtk_wrapped_pointer(PyObject* obj)
+{
+    char thisStr[] = "__this__";
+    //first we need to get the __this__ attribute from the Python Object
+    if (!PyObject_HasAttrString(obj, thisStr))
+        return NULL;
+
+    PyObject* thisAttr = PyObject_GetAttrString(obj, thisStr);
+    if (thisAttr == NULL)
+        return NULL;
+
+    char* str = PyString_AsString(thisAttr);
+    if(str == 0 || strlen(str) < 1)
+        return NULL;
+
+    char hex_address[32], *pEnd;
+    char *_p_ = strstr(str, "_p_vtk");
+    if(_p_ == NULL) return NULL;
+    char *class_name = strstr(_p_, "vtk");
+    if(class_name == NULL) return NULL;
+    strcpy(hex_address, str+1);
+    hex_address[_p_-str-1] = '\0';
+
+    long address = strtol(hex_address, &pEnd, 16);
+
+    vtkObjectBase* vtk_object = (vtkObjectBase*)((void*)address);
+    std::cout <<"check if vtk_object is a "<<class_name<<std::endl;
+    if(vtk_object->IsA(class_name))
+    {
+        std::cout <<"yup, it is"<<std::endl;
+
+        return vtk_object;
+    }
+
+    return NULL;
+}
+
+
+#define VTK_PYTHON_CONVERSION(type) \
+    /* register the to-python converter */ \
+    to_python_converter<vtkSmartPointer<type>,vtkSmartPointer_to_python<type> >(); \
+    /* register the from-python converter */ \
+    converter::registry::insert(&extract_vtk_wrapped_pointer, type_id<type>());
+
+
 std::auto_ptr<NextSubvolumeMethod> (*NSM_New1)(const Vect3d&, const Vect3d&, const Vect3d&) = &NextSubvolumeMethod::New;
 std::auto_ptr<NextSubvolumeMethod> (*NSM_New2)(Grid&) = &NextSubvolumeMethod::New;
 void (NextSubvolumeMethod::*NSM_add_diffusion_between)(Species&, const double, Geometry&, Geometry&) = &NextSubvolumeMethod::add_diffusion_between;
+void (NextSubvolumeMethod::*NSM_scale_diffusion_across)(Species&, Geometry&, const double) = &NextSubvolumeMethod::scale_diffusion_across;
+
 bool (Grid::*Grid_is_in)(const Geometry&, const int) const = &Grid::is_in;
+
+std::auto_ptr<Species> (*Species_New_double)(double) = Species::New;
+std::auto_ptr<Species> (*Species_New_Vect3d)(Vect3d) = Species::New;
 
 BOOST_PYTHON_MODULE(pyTyche) {
 	import_array();
 	numeric::array::set_module_and_type("numpy", "ndarray");
 	def("init", python_init);
 	def("random_seed", random_seed);
+
 
 	/*
 	 * vector
@@ -380,7 +462,10 @@ BOOST_PYTHON_MODULE(pyTyche) {
 	        .def(boost::python::vector_indexing_suite<std::vector<double> >())
 	    ;
 
-	to_python_converter<vtkSmartPointer<vtkUnstructuredGrid>,vtkSmartPointer_to_python<vtkUnstructuredGrid> >();
+	VTK_PYTHON_CONVERSION(vtkUnstructuredGrid);
+	VTK_PYTHON_CONVERSION(vtkPolyData);
+
+
 	Vect3_from_python_list<double>();
 	Vect3_from_python_list<int>();
 	Vect3_from_python_list<bool>();
@@ -395,11 +480,15 @@ BOOST_PYTHON_MODULE(pyTyche) {
 			.def("fill_uniform",Species_fill_uniform_interface)
 			.def("get_concentration",Species_get_concentration1)
 			.def("get_vtk",&Species::get_vtk)
-			.def("get_compartments",Species_get_compartments)
+			.def("get_compartments",Species_get_compartments,
+					"Returns numpy (3-dimensional) array with a copy of the current copy numbers in each compartment")
+			.def("set_compartments",Species_set_compartments,args("input"),
+					"Sets the compartment copy numbers for this species equal to the input numpy array. Note: use NextSubvolumeMethod.reset_all_propensities() to recaculate propensities and next reaction times")
 			.def("get_particles",Species_get_particles)
 			.def(self_ns::str(self_ns::self))
 			;
-	def("new_species",Species::New);
+	def("new_species",Species_New_double);
+	def("new_species",Species_New_Vect3d);
 
 
    /*
@@ -432,6 +521,7 @@ BOOST_PYTHON_MODULE(pyTyche) {
 	def("new_xcylinder",xcylinder::New);
 	def("new_ycylinder",ycylinder::New);
 	def("new_zcylinder",zcylinder::New);
+	def("new_vtkGeometry",vtkGeometry::New);
 
 	class_<Geometry, boost::noncopyable, typename std::auto_ptr<Geometry> >("Geometry", boost::python::no_init);
 
@@ -446,6 +536,9 @@ BOOST_PYTHON_MODULE(pyTyche) {
 	class_<xcylinder,typename std::auto_ptr<xcylinder> >("Xcylinder",boost::python::no_init);
 	class_<ycylinder,typename std::auto_ptr<ycylinder> >("Ycylinder",boost::python::no_init);
 	class_<zcylinder,typename std::auto_ptr<zcylinder> >("Zcylinder",boost::python::no_init);
+
+	class_<vtkGeometry,typename std::auto_ptr<vtkGeometry> >("vtkGeometry",boost::python::no_init);
+
 
 	def("new_box", Box::New);
 	def("new_multiple_boxes", MultipleBoxes::New);
@@ -476,6 +569,8 @@ BOOST_PYTHON_MODULE(pyTyche) {
     def("new_reflective_boundary",ReflectiveBoundary<xcylinder>::New);
     def("new_reflective_boundary",ReflectiveBoundary<ycylinder>::New);
     def("new_reflective_boundary",ReflectiveBoundary<zcylinder>::New);
+    def("new_reflective_boundary",ReflectiveBoundary<vtkGeometry>::New);
+
 
     def("new_jump_boundary",JumpBoundary<xplane>::New);
     def("new_jump_boundary",JumpBoundary<yplane>::New);
@@ -546,7 +641,10 @@ BOOST_PYTHON_MODULE(pyTyche) {
     	.def("add_diffusion_between",NSM_add_diffusion_between)
     	.def("add_reaction",&NextSubvolumeMethod::add_reaction)
     	.def("add_reaction_on",&NextSubvolumeMethod::add_reaction_on)
+    	.def("scale_diffusion_across",NSM_scale_diffusion_across)
     	.def("fill_uniform",&NextSubvolumeMethod::fill_uniform)
+    	.def("reset_all_propensities",&NextSubvolumeMethod::reset_all_priorities,
+    			"Recalculates the propensities and next reaction times for all compartments")
     	;
 
 }
