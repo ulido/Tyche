@@ -25,7 +25,7 @@
 #ifndef NEXTSUBVOLUMEMETHOD_H_
 #define NEXTSUBVOLUMEMETHOD_H_
 
-#include <boost/heap/fibonacci_heap.hpp>
+#include <boost/heap/pairing_heap.hpp>
 #include <vector>
 #include <set>
 #include "MyRandom.h"
@@ -53,10 +53,8 @@ struct HeapNode {
 		return time_at_next_reaction > rhs.time_at_next_reaction;
 	}
 };
-typedef boost::heap::fibonacci_heap<HeapNode> PriorityHeap;
-typedef boost::heap::fibonacci_heap<HeapNode>::handle_type HeapHandle;
-
-
+typedef boost::heap::pairing_heap<HeapNode> PriorityHeap;
+typedef boost::heap::pairing_heap<HeapNode>::handle_type HeapHandle;
 
 struct ReactionsWithSameRateAndLHS {
 	ReactionsWithSameRateAndLHS(const double rate, const ReactionSide& lhs, const ReactionSide& rhs):
