@@ -133,15 +133,10 @@ public:
 	double get_P_lambda() const {return this->P_lambda;}
 	double get_binding_radius() const {return binding_radius;}
 	double get_unbinding_radius() const {return unbinding_radius;}
-        int get_site_state() const {return site_state;}
-	std::list< std::pair< int, double > > get_state_sequence(bool clear=false) {
-		std::list< std::pair< int, double > > retlist = std::list< std::pair< int, double > >(state_sequence);
-		if (clear) state_sequence.clear();
-		return retlist;
-	}
+	std::vector<unsigned int> get_site_state() const {return site_state_list;}
 	void report_dt_suitability(const double dt);
 
-	void set_state_changed_cb(const boost::function< void(double, int) > callback)
+	void set_state_changed_cb(const boost::function< void(double, std::vector<unsigned int>) > callback)
 	{
 	  have_state_changed_cb = true;
 	  state_changed_cb = callback;
@@ -171,9 +166,9 @@ protected:
         bool remove_molecule;
 	int binding_sites;
 	int site_state;
+	std::vector<unsigned int> site_state_list;
 	bool have_state_changed_cb;
-	std::list< std::pair< int, double > > state_sequence;
-	boost::function< void(double, int) > state_changed_cb;
+	boost::function< void(double, std::vector<unsigned int>) > state_changed_cb;
 };
 
 template<typename T>

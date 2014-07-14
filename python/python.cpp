@@ -138,6 +138,19 @@ struct Vect3_from_python_list
 
 };
 
+template<class T>
+struct VecToList
+{
+    static PyObject* convert(const std::vector<T>& vec)
+    {
+        boost::python::list* l = new boost::python::list();
+        for(size_t i = 0; i < vec.size(); i++)
+            (*l).append(vec[i]);
+
+        return l->ptr();
+    }
+};
+
 void python_init(boost::python::list& py_argv) {
 	using boost::python::len;
 
@@ -293,32 +306,18 @@ void Species_fill_uniform_interface(Species &self, const Vect3d &low, const Vect
   self.fill_uniform(low, high, interface, N);
 }
 
-boost::python::object BindingReaction_get_state_sequence(BindingReaction& self) {
-	boost::python::list retlist = boost::python::list();
-	std::list<std::pair<int, double > > slist = self.get_state_sequence(true);
-	std::list<std::pair<int, double > >::const_iterator iter;
-
-	for (iter = slist.begin(); iter != slist.end(); ++iter) {
-		int state = (*iter).first;
-		double time = (*iter).second;
-		retlist.append(boost::python::make_tuple(state, time));
-	}
-
-	return retlist;
-}
-
 struct BR_Python_Callback {
   boost::python::object py_callable;
   boost::python::tuple args;
-  void operator()(double time, int state) {
-    py_callable(time, state, args);
+  void operator()(double time, std::vector<unsigned int> state) {
+    py_callable(time, boost::python::list(state), args);
   }
 };
 
 void BindingReaction_set_state_changed_cb(BindingReaction& self, boost::python::object& callable, boost::python::tuple& args)
 {
   BR_Python_Callback cb {callable, args};
-  self.set_state_changed_cb(boost::function<void(double, int)>(cb));
+  self.set_state_changed_cb(boost::function<void(double, std::vector<unsigned int>)>(cb));
 }
 
 std::auto_ptr<Operator> group(const boost::python::list& ops) {
@@ -471,6 +470,8 @@ BOOST_PYTHON_MODULE(pyTyche) {
 	Vect3_from_python_list<bool>();
 	ReactionEquation_from_python_list();
 
+	to_python_converter<std::vector<unsigned int>, VecToList<unsigned int> >();
+
 	/*
 	 * Species
 	 */
@@ -606,7 +607,6 @@ BOOST_PYTHON_MODULE(pyTyche) {
 
 	class_<BindingReaction, bases<Operator>, std::auto_ptr<BindingReaction> >("BindingReaction", boost::python::no_init)
 		.def("get_site_state", &BindingReaction::get_site_state)
-		.def("get_state_sequence", &BindingReaction_get_state_sequence)
 	        .def("set_state_changed_cb", &BindingReaction_set_state_changed_cb);
 
     /*

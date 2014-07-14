@@ -132,66 +132,62 @@ protected:
 };
 
 void BindingReaction::integrate(const double dt) {
-	Molecules* mols = &get_species()[0]->mols;
-
 	boost::uniform_real<> uni_dist(0.0,1.0);
 	boost::variate_generator<base_generator_type&, boost::uniform_real<> > uni(generator, uni_dist);
-
-	const double binding_radius2 = binding_radius*binding_radius;
-	const int n = mols->size();
-	const int open_sites = binding_sites-site_state;
-	const double bprob = 1.-P_lambda;
-	std::vector<int> bind_candidates(0);
-
-	for (int mols_i=0; mols_i<n; mols_i++) {
-	  if (!(mols->alive[mols_i])) continue;
-	  const Vect3d pos = mols->r[mols_i];
-	  if ((position-pos).squaredNorm() < binding_radius2)
-		bind_candidates.push_back(mols_i);
-	}
 	
-	if(bind_candidates.size()>0) {
-	  for (int i=0; i < open_sites; i++) {
-		int nr_bind_candidates = bind_candidates.size();
-		if (nr_bind_candidates==0) break;
-		double prob = 1.-pow(bprob, nr_bind_candidates);
-		double r = uni();
-		if (r < prob) {
-		  //boost::uniform_int<> uni_int(0, nr_bind_candidates-1);
-		  //boost::variate_generator<base_generator_type&, boost::uniform_int<> > rint(generator, uni_int);
-		  std::vector<int>::iterator bind_it = bind_candidates.begin()+floor(r*nr_bind_candidates/prob);
-		  if (remove_molecule) {
-		    mols->mark_for_deletion(*bind_it);
-		    bind_candidates.erase(bind_it);
-		  }
-		  
-		  site_state++;
-		  
-		  std::pair<int, double> state_pair = std::pair<int, double>(site_state, get_time());
-		  state_sequence.push_back(state_pair);
-		  
-		  if (have_state_changed_cb)
-		    state_changed_cb(get_time()+dt, site_state);
-		}
+	Molecules* mols = &get_species()[0]->mols;
+
+	int open_sites = binding_sites-site_state;
+	if (open_sites>0) {
+	  const double binding_radius2 = binding_radius*binding_radius;
+	  const double nbprob = 1.-P_lambda;
+	  const int n = mols->size();
+	  
+	  std::vector<unsigned int> can_bind;
+	  for (int i=0; i<binding_sites; i++)
+	    if (site_state_list[i]==0)
+	      can_bind.push_back(i);
+	  shuffle(can_bind.begin(), can_bind.end(), generator);
+	  
+	  for (int mols_i=0; mols_i<n; mols_i++) {
+	    if (!(mols->alive[mols_i])) continue;
+	    const Vect3d pos = mols->r[mols_i];
+	    if ((pos[2]<binding_radius) && ((position-pos).squaredNorm() < binding_radius2)) {
+	      if (uni() < 1.-pow(nbprob,open_sites)) {
+		if (remove_molecule)
+		  mols->mark_for_deletion(mols_i);
+		
+		auto can_bind_idx = can_bind.back();
+		can_bind.pop_back();
+		site_state_list[can_bind_idx] = 1;
+		site_state++;
+		open_sites--;
+		
+		if (have_state_changed_cb)
+		  state_changed_cb(get_time()+dt, site_state_list);
+
+		if (open_sites==0)
+		  break;
+	      }
+	    }
 	  }
 	  mols->delete_molecules();
 	}
-
-	for (int i = 0; i < site_state; i++) {
-	  if (uni() < P_diss) {
+	
+	for (int i=0; i<binding_sites; i++) {
+	  if ((site_state_list[i]==1) && (uni() < P_diss)) {
 	    site_state--;
+	    site_state_list[i] = 0;
 	  
-	    std::pair<int, double> state_pair = std::pair<int, double>(site_state, get_time());
-	    state_sequence.push_back(state_pair);
-	    
 	    if (have_state_changed_cb)
-	      state_changed_cb(get_time()+dt, site_state);
+	      state_changed_cb(get_time()+dt, site_state_list);
 
-	    double phi = 2*PI*uni();
-	    double thet = PI/2.*uni();
-	    Vect3d npos = Vect3d(unbinding_radius*sin(thet)*cos(phi), unbinding_radius*sin(thet)*sin(phi), unbinding_radius*cos(thet)) + position;
-	    if (remove_molecule)
+	    if (remove_molecule) {
+	      double phi = 2*PI*uni();
+	      double thet = PI/2.*uni();
+	      Vect3d npos = Vect3d(unbinding_radius*sin(thet)*cos(phi), unbinding_radius*sin(thet)*sin(phi), unbinding_radius*cos(thet)) + position;
 	      mols->add_molecule(npos, npos);
+	    }
 	  }
 	}
 }
@@ -936,7 +932,12 @@ BindingReaction::BindingReaction(const double rate,
 
 	P_lambda = calculate_lambda(dt);
 
-	state_sequence = std::list<std::pair<int, double > >();
+	int count = initial_state;
+	for(int i=0; i<binding_sites; i++) {
+	  site_state_list.push_back(count>0);
+	  count--;
+	}
+	shuffle(site_state_list.begin(), site_state_list.end(), generator);
 
 	LOG(2,"created binding reaction at position " << pos << " for species " << species <<" binding radius = " << binding_radius <<" unbinding radius = "<<unbinding_radius<< " P_lambda = " << P_lambda << " P_diss = " << P_diss);
 };
